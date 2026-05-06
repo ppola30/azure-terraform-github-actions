@@ -12,7 +12,7 @@ jobs:
 
     defaults:
       run:
-        working-directory: terraform/task1-vm-app
+        working-directory: terraform/task2-loadbalancer
 
     steps:
       - name: Checkout code
