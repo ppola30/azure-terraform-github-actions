@@ -1,21 +1,31 @@
-name: Terraform Task 1
+name: Azure Terraform Professional Pipeline
 
 on:
-  push:
-    branches:
-      - main
   workflow_dispatch:
+    inputs:
+      task:
+        description: "Select task to run"
+        required: true
+        default: "task1"
+        type: choice
+        options:
+          - task1
+          - task2
+          - task3
+          - task4
+          - task5
+          - task6
 
 jobs:
-  terraform:
+  deploy:
     runs-on: ubuntu-latest
 
     defaults:
       run:
-        working-directory: terraform/task2-loadbalancer
+        working-directory: terraform/${{ github.event.inputs.task }}
 
     steps:
-      - name: Checkout code
+      - name: Checkout Code
         uses: actions/checkout@v4
 
       - name: Azure Login
@@ -34,6 +44,9 @@ jobs:
 
       - name: Terraform Init
         run: terraform init
+
+      - name: Terraform Validate
+        run: terraform validate
 
       - name: Terraform Plan
         run: terraform plan
