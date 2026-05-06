@@ -3,7 +3,7 @@ provider "azurerm" {
 }
 
 resource "azurerm_resource_group" "rg" {
-  name     = "pavan-task1-rg"
+  name = "pavan-task1-github-rg"
   location = "Central India"
 }
 
