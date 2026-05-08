@@ -161,3 +161,114 @@ resource "azurerm_monitor_metric_alert" "cpu_warning" {
     action_group_id = azurerm_monitor_action_group.action_group.id
   }
 }
+resource "azurerm_log_analytics_workspace" "law" {
+  name                = "task5-law"
+  location            = data.azurerm_resource_group.rg.location
+  resource_group_name = data.azurerm_resource_group.rg.name
+  sku                 = "PerGB2018"
+  retention_in_days   = 30
+}
+resource "azurerm_virtual_machine_extension" "ama" {
+  name                       = "AzureMonitorLinuxAgent"
+  virtual_machine_id         = azurerm_linux_virtual_machine.vm.id
+  publisher                  = "Microsoft.Azure.Monitor"
+  type                       = "AzureMonitorLinuxAgent"
+  type_handler_version       = "1.33"
+  auto_upgrade_minor_version = true
+}
+resource "azurerm_monitor_data_collection_endpoint" "dce" {
+  name                = "task5-dce"
+  location            = data.azurerm_resource_group.rg.location
+  resource_group_name = data.azurerm_resource_group.rg.name
+}
+resource "azurerm_monitor_data_collection_rule" "dcr" {
+  name                        = "task5-dcr"
+  location                    = data.azurerm_resource_group.rg.location
+  resource_group_name         = data.azurerm_resource_group.rg.name
+  data_collection_endpoint_id = azurerm_monitor_data_collection_endpoint.dce.id
+
+  destinations {
+    log_analytics {
+      workspace_resource_id = azurerm_log_analytics_workspace.law.id
+      name                  = "law-destination"
+    }
+  }
+
+  data_flow {
+    streams      = ["Microsoft-InsightsMetrics"]
+    destinations = ["law-destination"]
+  }
+
+  data_sources {
+    performance_counter {
+      streams                       = ["Microsoft-InsightsMetrics"]
+      sampling_frequency_in_seconds = 60
+      counter_specifiers = [
+        "\\Memory\\% Committed Bytes In Use",
+        "\\LogicalDisk(_Total)\\% Free Space"
+      ]
+      name = "perfCounters"
+    }
+  }
+}
+resource "azurerm_monitor_data_collection_rule_association" "assoc" {
+  name                    = "task5-dcr-association"
+  target_resource_id      = azurerm_linux_virtual_machine.vm.id
+  data_collection_rule_id = azurerm_monitor_data_collection_rule.dcr.id
+}
+resource "azurerm_monitor_scheduled_query_rules_alert_v2" "memory_alert" {
+  name                = "task5-memory-alert"
+  location            = data.azurerm_resource_group.rg.location
+  resource_group_name = data.azurerm_resource_group.rg.name
+
+  evaluation_frequency = "PT5M"
+  window_duration      = "PT5M"
+  scopes               = [azurerm_log_analytics_workspace.law.id]
+  severity             = 2
+
+  criteria {
+    query = <<-QUERY
+InsightsMetrics
+| where Namespace == "Memory"
+| where Name == "CommittedBytes"
+| summarize AggregatedValue = avg(Val) by bin(TimeGenerated, 5m)
+QUERY
+
+    time_aggregation_method = "Average"
+    metric_measure_column   = "AggregatedValue"
+    threshold               = 75
+    operator                = "GreaterThan"
+  }
+
+  action {
+    action_groups = [azurerm_monitor_action_group.action_group.id]
+  }
+}
+resource "azurerm_monitor_scheduled_query_rules_alert_v2" "disk_alert" {
+  name                = "task5-disk-alert"
+  location            = data.azurerm_resource_group.rg.location
+  resource_group_name = data.azurerm_resource_group.rg.name
+
+  evaluation_frequency = "PT5M"
+  window_duration      = "PT5M"
+  scopes               = [azurerm_log_analytics_workspace.law.id]
+  severity             = 2
+
+  criteria {
+    query = <<-QUERY
+InsightsMetrics
+| where Namespace == "LogicalDisk"
+| where Name == "FreeSpacePercentage"
+| summarize AggregatedValue = avg(Val) by bin(TimeGenerated, 5m)
+QUERY
+
+    time_aggregation_method = "Average"
+    metric_measure_column   = "AggregatedValue"
+    threshold               = 20
+    operator                = "LessThan"
+  }
+
+  action {
+    action_groups = [azurerm_monitor_action_group.action_group.id]
+  }
+}
