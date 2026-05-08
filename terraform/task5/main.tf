@@ -118,49 +118,6 @@ resource "azurerm_monitor_action_group" "action_group" {
   }
 }
 
-resource "azurerm_monitor_metric_alert" "cpu_critical" {
-  name                = "task5-cpu-critical-90"
-  resource_group_name = data.azurerm_resource_group.rg.name
-  scopes              = [azurerm_linux_virtual_machine.vm.id]
-  description         = "Critical alert when CPU usage is above 90%"
-  severity            = 0
-  frequency           = "PT1M"
-  window_size         = "PT5M"
-
-  criteria {
-    metric_namespace = "Microsoft.Compute/virtualMachines"
-    metric_name      = "Percentage CPU"
-    aggregation      = "Average"
-    operator         = "GreaterThan"
-    threshold        = 90
-  }
-
-  action {
-    action_group_id = azurerm_monitor_action_group.action_group.id
-  }
-}
-
-resource "azurerm_monitor_metric_alert" "cpu_warning" {
-  name                = "task5-cpu-warning-75"
-  resource_group_name = data.azurerm_resource_group.rg.name
-  scopes              = [azurerm_linux_virtual_machine.vm.id]
-  description         = "Warning alert when CPU usage is above 75%"
-  severity            = 2
-  frequency           = "PT1M"
-  window_size         = "PT5M"
-
-  criteria {
-    metric_namespace = "Microsoft.Compute/virtualMachines"
-    metric_name      = "Percentage CPU"
-    aggregation      = "Average"
-    operator         = "GreaterThan"
-    threshold        = 75
-  }
-
-  action {
-    action_group_id = azurerm_monitor_action_group.action_group.id
-  }
-}
 resource "azurerm_log_analytics_workspace" "law" {
   name                = "task5-law"
   location            = data.azurerm_resource_group.rg.location
@@ -168,6 +125,7 @@ resource "azurerm_log_analytics_workspace" "law" {
   sku                 = "PerGB2018"
   retention_in_days   = 30
 }
+
 resource "azurerm_virtual_machine_extension" "ama" {
   name                       = "AzureMonitorLinuxAgent"
   virtual_machine_id         = azurerm_linux_virtual_machine.vm.id
@@ -176,11 +134,13 @@ resource "azurerm_virtual_machine_extension" "ama" {
   type_handler_version       = "1.33"
   auto_upgrade_minor_version = true
 }
+
 resource "azurerm_monitor_data_collection_endpoint" "dce" {
   name                = "task5-dce"
   location            = data.azurerm_resource_group.rg.location
   resource_group_name = data.azurerm_resource_group.rg.name
 }
+
 resource "azurerm_monitor_data_collection_rule" "dcr" {
   name                        = "task5-dcr"
   location                    = data.azurerm_resource_group.rg.location
@@ -211,48 +171,133 @@ resource "azurerm_monitor_data_collection_rule" "dcr" {
     }
   }
 }
+
 resource "azurerm_monitor_data_collection_rule_association" "assoc" {
   name                    = "task5-dcr-association"
   target_resource_id      = azurerm_linux_virtual_machine.vm.id
   data_collection_rule_id = azurerm_monitor_data_collection_rule.dcr.id
 }
-resource "azurerm_monitor_scheduled_query_rules_alert_v2" "memory_alert" {
-  name                = "task5-memory-alert"
+
+# CPU 75% Warning
+resource "azurerm_monitor_metric_alert" "cpu_warning" {
+  name                = "task5-cpu-warning-75"
+  resource_group_name = data.azurerm_resource_group.rg.name
+  scopes              = [azurerm_linux_virtual_machine.vm.id]
+  description         = "Warning alert when CPU usage reaches 75%"
+  severity            = 2
+  frequency           = "PT1M"
+  window_size         = "PT5M"
+
+  criteria {
+    metric_namespace = "Microsoft.Compute/virtualMachines"
+    metric_name      = "Percentage CPU"
+    aggregation      = "Average"
+    operator         = "GreaterThanOrEqual"
+    threshold        = 75
+  }
+
+  action {
+    action_group_id = azurerm_monitor_action_group.action_group.id
+  }
+}
+
+# CPU 90% Critical
+resource "azurerm_monitor_metric_alert" "cpu_critical" {
+  name                = "task5-cpu-critical-90"
+  resource_group_name = data.azurerm_resource_group.rg.name
+  scopes              = [azurerm_linux_virtual_machine.vm.id]
+  description         = "Critical alert when CPU usage reaches 90%"
+  severity            = 0
+  frequency           = "PT1M"
+  window_size         = "PT5M"
+
+  criteria {
+    metric_namespace = "Microsoft.Compute/virtualMachines"
+    metric_name      = "Percentage CPU"
+    aggregation      = "Average"
+    operator         = "GreaterThanOrEqual"
+    threshold        = 90
+  }
+
+  action {
+    action_group_id = azurerm_monitor_action_group.action_group.id
+  }
+}
+
+# Memory 75% Warning
+resource "azurerm_monitor_scheduled_query_rules_alert_v2" "memory_warning" {
+  name                = "task5-memory-warning-75"
   location            = data.azurerm_resource_group.rg.location
   resource_group_name = data.azurerm_resource_group.rg.name
+  scopes              = [azurerm_log_analytics_workspace.law.id]
+  description         = "Warning alert when memory usage reaches 75%"
+  severity            = 2
 
   evaluation_frequency = "PT5M"
   window_duration      = "PT5M"
-  scopes               = [azurerm_log_analytics_workspace.law.id]
-  severity             = 2
 
   criteria {
     query = <<-QUERY
 InsightsMetrics
 | where Namespace == "Memory"
-| where Name == "CommittedBytes"
+| where Name == "UtilizationPercentage"
 | summarize AggregatedValue = avg(Val) by bin(TimeGenerated, 5m)
 QUERY
 
     time_aggregation_method = "Average"
     metric_measure_column   = "AggregatedValue"
+    operator                = "GreaterThanOrEqual"
     threshold               = 75
-    operator                = "GreaterThan"
   }
 
   action {
     action_groups = [azurerm_monitor_action_group.action_group.id]
   }
 }
-resource "azurerm_monitor_scheduled_query_rules_alert_v2" "disk_alert" {
-  name                = "task5-disk-alert"
+
+# Memory 90% Critical
+resource "azurerm_monitor_scheduled_query_rules_alert_v2" "memory_critical" {
+  name                = "task5-memory-critical-90"
   location            = data.azurerm_resource_group.rg.location
   resource_group_name = data.azurerm_resource_group.rg.name
+  scopes              = [azurerm_log_analytics_workspace.law.id]
+  description         = "Critical alert when memory usage reaches 90%"
+  severity            = 0
 
   evaluation_frequency = "PT5M"
   window_duration      = "PT5M"
-  scopes               = [azurerm_log_analytics_workspace.law.id]
-  severity             = 2
+
+  criteria {
+    query = <<-QUERY
+InsightsMetrics
+| where Namespace == "Memory"
+| where Name == "UtilizationPercentage"
+| summarize AggregatedValue = avg(Val) by bin(TimeGenerated, 5m)
+QUERY
+
+    time_aggregation_method = "Average"
+    metric_measure_column   = "AggregatedValue"
+    operator                = "GreaterThanOrEqual"
+    threshold               = 90
+  }
+
+  action {
+    action_groups = [azurerm_monitor_action_group.action_group.id]
+  }
+}
+
+# Disk 75% Warning
+# Azure collects free space, so 75% used means 25% free space remaining.
+resource "azurerm_monitor_scheduled_query_rules_alert_v2" "disk_warning" {
+  name                = "task5-disk-warning-75"
+  location            = data.azurerm_resource_group.rg.location
+  resource_group_name = data.azurerm_resource_group.rg.name
+  scopes              = [azurerm_log_analytics_workspace.law.id]
+  description         = "Warning alert when disk usage reaches 75%"
+  severity            = 2
+
+  evaluation_frequency = "PT5M"
+  window_duration      = "PT5M"
 
   criteria {
     query = <<-QUERY
@@ -264,8 +309,40 @@ QUERY
 
     time_aggregation_method = "Average"
     metric_measure_column   = "AggregatedValue"
-    threshold               = 20
-    operator                = "LessThan"
+    operator                = "LessThanOrEqual"
+    threshold               = 25
+  }
+
+  action {
+    action_groups = [azurerm_monitor_action_group.action_group.id]
+  }
+}
+
+# Disk 90% Critical
+# Azure collects free space, so 90% used means 10% free space remaining.
+resource "azurerm_monitor_scheduled_query_rules_alert_v2" "disk_critical" {
+  name                = "task5-disk-critical-90"
+  location            = data.azurerm_resource_group.rg.location
+  resource_group_name = data.azurerm_resource_group.rg.name
+  scopes              = [azurerm_log_analytics_workspace.law.id]
+  description         = "Critical alert when disk usage reaches 90%"
+  severity            = 0
+
+  evaluation_frequency = "PT5M"
+  window_duration      = "PT5M"
+
+  criteria {
+    query = <<-QUERY
+InsightsMetrics
+| where Namespace == "LogicalDisk"
+| where Name == "FreeSpacePercentage"
+| summarize AggregatedValue = avg(Val) by bin(TimeGenerated, 5m)
+QUERY
+
+    time_aggregation_method = "Average"
+    metric_measure_column   = "AggregatedValue"
+    operator                = "LessThanOrEqual"
+    threshold               = 10
   }
 
   action {
